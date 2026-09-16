@@ -187,8 +187,10 @@ LRESULT Application::HandleMessage(HWND window, UINT message, WPARAM wParam, LPA
             SetCapture(window);
             return 0;
         case WM_MOUSEMOVE:
-            if (userInterface_ && userInterface_->WantsMouse()) return 0;
-            if (dragging_)
+        {
+            const bool imguiOwnsMouse = userInterface_ && userInterface_->WantsMouse();
+            const bool leftButtonReported = (wParam & MK_LBUTTON) != 0;
+            if (dragging_ || (leftButtonReported && !imguiOwnsMouse))
             {
                 const POINT current{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
                 camera_.Rotate(static_cast<float>(current.x - lastMouse_.x),
@@ -196,6 +198,7 @@ LRESULT Application::HandleMessage(HWND window, UINT message, WPARAM wParam, LPA
                 lastMouse_ = current;
             }
             return 0;
+        }
         case WM_LBUTTONUP:
             dragging_ = false;
             ReleaseCapture();

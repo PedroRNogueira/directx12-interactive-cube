@@ -33,7 +33,11 @@ void UserInterface::Initialize(HWND window, ID3D12Device* device, UINT frameCoun
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    // Segoe UI inclui os glifos latinos usados em português e existe no Windows 10/11.
+    io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf", 16.0f, nullptr,
+                                 io.Fonts->GetGlyphRangesDefault());
+    // Sem navegação global por teclado: atalhos da apresentação continuam na aplicação.
+    // WantCaptureKeyboard ainda protege widgets que realmente recebem texto/teclas.
     ImGui::StyleColorsDark();
     ImGuiStyle& style = ImGui::GetStyle();
     style.WindowRounding = 6.0f;
@@ -64,7 +68,7 @@ void UserInterface::Draw(RenderOptions& options, const InterfaceStats& stats, bo
         ImGui::SetNextWindowPos(ImVec2(14.0f, 14.0f), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSize(ImVec2(390.0f, 690.0f), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSizeConstraints(ImVec2(345.0f, 420.0f), ImVec2(460.0f, 1000.0f));
-        ImGui::Begin("DirectX 12 - Painel da Demonstracao", nullptr, ImGuiWindowFlags_NoCollapse);
+        ImGui::Begin("DirectX 12 - Painel da Demonstração", nullptr, ImGuiWindowFlags_NoCollapse);
 
         ImGui::SeparatorText("OBJETO");
         const int selectedObject = options.object == SceneObject::Cube ? 0 : 1;
@@ -73,24 +77,31 @@ void UserInterface::Draw(RenderOptions& options, const InterfaceStats& stats, bo
         if (ImGui::RadioButton("Superficie Bezier", selectedObject == 1))
             options.object = SceneObject::BezierSurface;
 
-        ImGui::SeparatorText("VISUALIZACAO");
+        ImGui::SeparatorText("VISUALIZAÇÃO");
         ImGui::Checkbox("Wireframe", &options.wireframe);
         ImGui::SameLine();
-        ImGui::Checkbox("Iluminacao", &options.lighting);
+        ImGui::Checkbox("Iluminação", &options.lighting);
         ImGui::Checkbox("Componente especular", &options.specular);
         ImGui::SameLine();
-        ImGui::Checkbox("Auto-rotacao", &options.autoRotate);
+        ImGui::Checkbox("Auto-rotação", &options.autoRotate);
         ImGui::Checkbox("Cor pela posicao", &options.colorVisualization);
 
         ImGui::SeparatorText("TESSELLATION DA GPU");
         ImGui::SliderFloat("Fator", &options.tessellationFactor, 1.0f, 32.0f, "%.0f");
         options.tessellationFactor = std::round(options.tessellationFactor);
+        if (ImGui::Button("1")) options.tessellationFactor = 1.0f;
+        ImGui::SameLine();
+        if (ImGui::Button("8")) options.tessellationFactor = 8.0f;
+        ImGui::SameLine();
+        if (ImGui::Button("16")) options.tessellationFactor = 16.0f;
+        ImGui::SameLine();
+        if (ImGui::Button("32")) options.tessellationFactor = 32.0f;
         if (options.object == SceneObject::Cube)
             ImGui::TextDisabled("Usado pela superficie Bezier (16 control points).");
 
         ImGui::SeparatorText("LUZ E MATERIAL");
         ImGui::SliderFloat("Intensidade", &options.lightIntensity, 0.0f, 3.0f, "%.2f");
-        ImGui::SliderFloat3("Direcao", &options.lightDirection.x, -1.0f, 1.0f, "%.2f");
+        ImGui::SliderFloat3("Direção", &options.lightDirection.x, -1.0f, 1.0f, "%.2f");
         ImGui::SliderFloat("Ambiente", &options.ambientIntensity, 0.0f, 1.0f, "%.2f");
         ImGui::SliderFloat("Especular", &options.specularIntensity, 0.0f, 2.0f, "%.2f");
         ImGui::SliderFloat("Shininess", &options.shininess, 2.0f, 128.0f, "%.0f");
@@ -103,7 +114,7 @@ void UserInterface::Draw(RenderOptions& options, const InterfaceStats& stats, bo
         ImGui::Text("Yaw %.1f | Pitch %.1f | Zoom %.1f",
                     stats.yawDegrees, stats.pitchDegrees, stats.zoom);
         ImGui::Text("Objeto: %s", options.object == SceneObject::Cube ? "Cubo" : "Bezier");
-        ImGui::Text("Iluminacao %s | Wireframe %s",
+        ImGui::Text("Iluminação %s | Wireframe %s",
                     options.lighting ? "ON" : "OFF", options.wireframe ? "ON" : "OFF");
 
         if (ImGui::CollapsingHeader("Pipeline", ImGuiTreeNodeFlags_DefaultOpen))
@@ -120,9 +131,9 @@ void UserInterface::Draw(RenderOptions& options, const InterfaceStats& stats, bo
         if (ImGui::CollapsingHeader("Controles"))
         {
             ImGui::TextUnformatted("Mouse esquerdo + arrastar: orbitar");
-            ImGui::TextUnformatted("Scroll: zoom | R: reset | Espaco: auto-rotacao");
+            ImGui::TextUnformatted("Scroll: zoom | R: reset | Espaço: auto-rotação");
             ImGui::TextUnformatted("1: cubo | 2: superficie | W: wireframe");
-            ImGui::TextUnformatted("L: iluminacao | F1: interface | Esc: sair");
+            ImGui::TextUnformatted("L: iluminação | F1: interface | Esc: sair");
         }
         ImGui::End();
     }
@@ -143,4 +154,3 @@ bool UserInterface::HandleMessage(HWND window, UINT message, WPARAM wParam, LPAR
 
 bool UserInterface::WantsMouse() const { return initialized_ && ImGui::GetIO().WantCaptureMouse; }
 bool UserInterface::WantsKeyboard() const { return initialized_ && ImGui::GetIO().WantCaptureKeyboard; }
-
