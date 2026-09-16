@@ -48,6 +48,8 @@ int Application::Run(int showCommand)
 {
     CreateMainWindow(showCommand);
     renderer_->Initialize(window_, clientWidth_, clientHeight_);
+    userInterface_ = std::make_unique<UserInterface>();
+    userInterface_->Initialize(window_, renderer_->Device(), Renderer::FrameCount);
     rendererReady_ = true;
 
     MSG message{};
@@ -82,7 +84,7 @@ int Application::Run(int showCommand)
 void Application::Update(float deltaSeconds)
 {
     elapsedSeconds_ += deltaSeconds;
-    camera_.Update(deltaSeconds, dragging_);
+    camera_.Update(deltaSeconds, dragging_, renderOptions_.autoRotate);
 
     const XMMATRIX model = XMMatrixIdentity();
     const XMMATRIX view = camera_.ViewMatrix();
@@ -91,13 +93,32 @@ void Application::Update(float deltaSeconds)
 
     // A ordem row-vector do DirectXMath é Model * View * Projection.
     const XMMATRIX mvp = model * view * projection;
-    renderer_->UpdateScene(mvp, renderMode_ == 3 ? 1.0f : 0.0f, elapsedSeconds_);
+    renderer_->UpdateScene(mvp, renderOptions_.colorVisualization ? 1.0f : 0.0f, elapsedSeconds_);
     UpdateWindowTitle(deltaSeconds);
+
+    InterfaceStats stats;
+    stats.fps = displayedFps_;
+    const int required = WideCharToMultiByte(CP_UTF8, 0, renderer_->AdapterName().c_str(), -1,
+                                              nullptr, 0, nullptr, nullptr);
+    if (required > 1)
+    {
+        stats.adapterName.resize(static_cast<size_t>(required));
+        WideCharToMultiByte(CP_UTF8, 0, renderer_->AdapterName().c_str(), -1,
+                            stats.adapterName.data(), required, nullptr, nullptr);
+        stats.adapterName.pop_back();
+    }
+    stats.frameIndex = renderer_->FrameIndex();
+    stats.fenceValue = renderer_->LastFenceValue();
+    stats.yawDegrees = camera_.YawDegrees();
+    stats.pitchDegrees = camera_.PitchDegrees();
+    stats.zoom = camera_.Distance();
+    userInterface_->BeginFrame();
+    userInterface_->Draw(renderOptions_, stats, showInterface_);
 }
 
 void Application::Render()
 {
-    renderer_->Render(renderMode_ == 2);
+    renderer_->Render(renderOptions_.wireframe, userInterface_.get());
 }
 
 void Application::UpdateWindowTitle(float deltaSeconds)
@@ -109,18 +130,14 @@ void Application::UpdateWindowTitle(float deltaSeconds)
     titleAccumulator_ = 0.0f;
     titleFrames_ = 0;
 
-    if (!showTelemetry_)
-    {
-        SetWindowTextW(window_, BaseTitle);
-        return;
-    }
-    const auto position = camera_.Position();
     std::wostringstream title;
     title << BaseTitle << L" | FPS " << std::fixed << std::setprecision(1) << displayedFps_
           << L" | buffer " << renderer_->FrameIndex() << L"/" << Renderer::FrameCount
           << L" | fence " << renderer_->LastFenceValue()
-          << L" | modo " << renderMode_
-          << L" | auto " << (camera_.AutoRotate() ? L"on" : L"off")
+          << L" | " << SceneObjectName(renderOptions_.object)
+          << L" | wire " << (renderOptions_.wireframe ? L"on" : L"off")
+          << L" | luz " << (renderOptions_.lighting ? L"on" : L"off")
+          << L" | auto " << (renderOptions_.autoRotate ? L"on" : L"off")
           << L" | yaw " << camera_.YawDegrees() << L"° pitch " << camera_.PitchDegrees()
           << L"° zoom " << camera_.Distance()
           << L" | GPU: " << renderer_->AdapterName()
@@ -153,6 +170,9 @@ LRESULT Application::HandleMessage(HWND window, UINT message, WPARAM wParam, LPA
 {
     try
     {
+        if (userInterface_ && userInterface_->Initialized())
+            userInterface_->HandleMessage(window, message, wParam, lParam);
+
         switch (message)
         {
         case WM_SIZE:
@@ -162,11 +182,13 @@ LRESULT Application::HandleMessage(HWND window, UINT message, WPARAM wParam, LPA
             if (rendererReady_ && !minimized_) renderer_->Resize(clientWidth_, clientHeight_);
             return 0;
         case WM_LBUTTONDOWN:
+            if (userInterface_ && userInterface_->WantsMouse()) return 0;
             dragging_ = true;
             lastMouse_ = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
             SetCapture(window);
             return 0;
         case WM_MOUSEMOVE:
+            if (userInterface_ && userInterface_->WantsMouse()) return 0;
             if (dragging_)
             {
                 const POINT current{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
@@ -183,14 +205,25 @@ LRESULT Application::HandleMessage(HWND window, UINT message, WPARAM wParam, LPA
             dragging_ = false;
             return 0;
         case WM_MOUSEWHEEL:
+            if (userInterface_ && userInterface_->WantsMouse()) return 0;
             camera_.Zoom(static_cast<float>(GET_WHEEL_DELTA_WPARAM(wParam)) / WHEEL_DELTA);
             return 0;
         case WM_KEYDOWN:
             if (wParam == VK_ESCAPE) DestroyWindow(window);
+            else if (wParam == VK_F1 && (lParam & (1LL << 30)) == 0)
+                showInterface_ = !showInterface_;
+            else if (userInterface_ && userInterface_->WantsKeyboard()) return 0;
             else if (wParam == 'R') camera_.Reset();
-            else if (wParam == VK_SPACE && (lParam & (1LL << 30)) == 0) camera_.ToggleAutoRotate();
-            else if (wParam == VK_F1 && (lParam & (1LL << 30)) == 0) showTelemetry_ = !showTelemetry_;
-            else if (wParam >= '1' && wParam <= '3') renderMode_ = static_cast<int>(wParam - '0');
+            else if (wParam == VK_SPACE && (lParam & (1LL << 30)) == 0)
+                renderOptions_.autoRotate = !renderOptions_.autoRotate;
+            else if (wParam == 'W' && (lParam & (1LL << 30)) == 0)
+                renderOptions_.wireframe = !renderOptions_.wireframe;
+            else if (wParam == 'L' && (lParam & (1LL << 30)) == 0)
+                renderOptions_.lighting = !renderOptions_.lighting;
+            else if (wParam == 'C' && (lParam & (1LL << 30)) == 0)
+                renderOptions_.colorVisualization = !renderOptions_.colorVisualization;
+            else if (wParam == '1') renderOptions_.object = SceneObject::Cube;
+            else if (wParam == '2') renderOptions_.object = SceneObject::BezierSurface;
             return 0;
         case WM_ERASEBKGND:
             return 1;

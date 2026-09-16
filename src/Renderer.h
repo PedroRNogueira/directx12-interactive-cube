@@ -10,6 +10,8 @@
 #include <cstdint>
 #include <string>
 
+class UserInterface;
+
 class Renderer
 {
 public:
@@ -23,7 +25,7 @@ public:
     void Initialize(HWND window, UINT width, UINT height);
     void UpdateScene(const DirectX::XMMATRIX& modelViewProjection,
                      float colorMode, float elapsedSeconds);
-    void Render(bool wireframe);
+    void Render(bool wireframe, UserInterface* userInterface);
     void Resize(UINT width, UINT height);
     void WaitForGpu();
 
@@ -32,6 +34,7 @@ public:
     [[nodiscard]] const std::wstring& AdapterName() const { return adapterName_; }
     [[nodiscard]] bool UsingWarp() const { return usingWarp_; }
     [[nodiscard]] UINT64 DebugMessageCount() const;
+    [[nodiscard]] ID3D12Device* Device() const { return device_.Get(); }
 
 private:
     struct FrameContext

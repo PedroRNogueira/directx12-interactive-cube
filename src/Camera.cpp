@@ -7,9 +7,9 @@ using namespace DirectX;
 
 Camera::Camera() = default;
 
-void Camera::Update(float deltaSeconds, bool beingControlled)
+void Camera::Update(float deltaSeconds, bool beingControlled, bool autoRotate)
 {
-    if (autoRotate_ && !beingControlled)
+    if (autoRotate && !beingControlled)
         targetYaw_ += deltaSeconds * 0.35f;
 
     // Aproximação exponencial: suave e independente da taxa de quadros.

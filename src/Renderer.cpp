@@ -2,6 +2,7 @@
 
 #include "DxHelpers.h"
 #include "Mesh.h"
+#include "UserInterface.h"
 
 #include <d3dcompiler.h>
 #include <filesystem>
@@ -354,7 +355,7 @@ void Renderer::UpdateScene(const DirectX::XMMATRIX& mvp, float colorMode, float 
     pendingConstants_.timeSeconds = elapsedSeconds;
 }
 
-void Renderer::Render(bool wireframe)
+void Renderer::Render(bool wireframe, UserInterface* userInterface)
 {
     const UINT index = swapChain_->GetCurrentBackBufferIndex();
     auto& frame = frames_[index];
@@ -388,6 +389,9 @@ void Renderer::Render(bool wireframe)
     commandList_->IASetVertexBuffers(0, 1, &vertexView_);
     commandList_->IASetIndexBuffer(&indexView_);
     commandList_->DrawIndexedInstanced(static_cast<UINT>(CubeMesh::Indices.size()), 1, 0, 0, 0);
+
+    // O backend oficial DX12 grava a interface na mesma lista do frame.
+    if (userInterface) userInterface->Render(commandList_.Get());
 
     // Present só pode consumir um recurso novamente no estado PRESENT.
     auto toPresent = TransitionBarrier(renderTargets_[index].Get(),
