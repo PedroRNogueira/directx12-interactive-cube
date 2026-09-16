@@ -1,0 +1,22 @@
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.VC.db
+*.VC.VC.opendb
+
+# CMake e binarios
+build/
+out/
+CMakeUserPresets.json
+cmake-build-*/
+*.obj
+*.pdb
+*.ilk
+*.exe
+
+# Sistema/editor
+.DS_Store
+Thumbs.db
+.vscode/
+
