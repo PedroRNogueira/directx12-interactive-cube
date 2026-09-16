@@ -2,6 +2,8 @@
 
 Projeto acadêmico em C++20, Win32, Direct3D 12, HLSL e DirectXMath. O cubo interativo é o instrumento visual; o assunto principal é o caminho completo dos dados entre aplicação, CPU, API, driver, GPU, render target, swap chain, Windows e monitor.
 
+O PDF explicativo do projeto está em docs.
+
 ## Objetivo
 
 Responder, com código executável: **como mover o mouse acaba alterando pixels físicos no monitor?** O projeto deixa explícitos os objetos do D3D12, as matrizes, os dados da malha, a gravação dos comandos e a sincronização. Não usa engine.
@@ -145,13 +147,13 @@ A dependência é obtida por `FetchContent` durante a primeira configuração CM
 
 ## CPU vs GPU
 
-| CPU | GPU |
-|---|---|
-| processa mensagens Win32 e input | executa muitas invocações de shader em paralelo |
-| atualiza yaw, pitch, zoom e matrizes | transforma vértices e avalia parâmetros |
-| administra recursos e estados | tessella patches e monta/rasteriza triângulos |
-| grava e submete comandos | interpola atributos e calcula cores |
-| coordena frames com fences | testa profundidade e escreve no back buffer |
+| CPU                                  | GPU                                             |
+| ------------------------------------ | ----------------------------------------------- |
+| processa mensagens Win32 e input     | executa muitas invocações de shader em paralelo |
+| atualiza yaw, pitch, zoom e matrizes | transforma vértices e avalia parâmetros         |
+| administra recursos e estados        | tessella patches e monta/rasteriza triângulos   |
+| grava e submete comandos             | interpola atributos e calcula cores             |
+| coordena frames com fences           | testa profundidade e escreve no back buffer     |
 
 Elas trabalham parcialmente independentes. `ExecuteCommandLists` submete trabalho; não espera seu término. Enquanto a GPU processa um frame, a CPU pode preparar outro frame context.
 
@@ -248,19 +250,19 @@ Para abrir e depurar na IDE, abra a pasta do projeto ou o `.sln` gerado. A build
 
 ## Controles
 
-| Entrada | Ação |
-|---|---|
+| Entrada                   | Ação                                         |
+| ------------------------- | -------------------------------------------- |
 | botão esquerdo + arrastar | orbitar (horizontal = yaw; vertical = pitch) |
-| roda do mouse | zoom entre 3 e 12 unidades |
-| R | resetar câmera |
-| Espaço | ligar/desligar rotação automática |
-| F1 | mostrar/ocultar painel ImGui |
-| 1 | selecionar cubo |
-| 2 | selecionar superfície Bézier |
-| W | ligar/desligar wireframe |
-| L | ligar/desligar iluminação |
-| C | ligar/desligar cor derivada da posição |
-| Esc | sair |
+| roda do mouse             | zoom entre 3 e 12 unidades                   |
+| R                         | resetar câmera                               |
+| Espaço                    | ligar/desligar rotação automática            |
+| F1                        | mostrar/ocultar painel ImGui                 |
+| 1                         | selecionar cubo                              |
+| 2                         | selecionar superfície Bézier                 |
+| W                         | ligar/desligar wireframe                     |
+| L                         | ligar/desligar iluminação                    |
+| C                         | ligar/desligar cor derivada da posição       |
+| Esc                       | sair                                         |
 
 O painel também controla specular, tessellation 1–32, intensidade/direção da luz, ambiente, intensidade especular e shininess.
 
