@@ -72,9 +72,9 @@ O bloco `Present` aparece vindo da CPU porque é uma chamada da aplicação, mas
 
 ```mermaid
 flowchart LR
-    VB[(Vertex Buffer<br/>posição + cor)] --> IA[Input Assembler]
+    VB[(Vertex Buffer<br/>posição + cor + normal)] --> IA[Input Assembler]
     IB[(Index Buffer<br/>36 índices)] --> IA
-    CB[(Constant Buffer<br/>MVP)] --> VS[Vertex Shader]
+    CB[(Constant Buffer<br/>MVP + luz + material)] --> VS[Vertex Shader]
     IA --> VS
     VS --> PA[Primitive Assembly<br/>12 triângulos]
     PA --> CP[Clipping + perspectiva]
@@ -169,3 +169,59 @@ flowchart LR
     RTV --> DSV[Recriar depth/DSV]
     DSV --> VP[Atualizar viewport, scissor e aspect]
 ```
+
+## 8. DirectX software stack
+
+```mermaid
+flowchart TD
+    CPP[Aplicação C++<br/>câmera, cena, UI] --> API[API Direct3D 12 / DXGI]
+    API --> RUNTIME[Direct3D Runtime]
+    RUNTIME --> DRIVER[Driver NVIDIA / AMD / Intel]
+    DRIVER --> WDDM[WDDM + GPU Scheduler do Windows]
+    WDDM --> GPU[GPU / adapter]
+```
+
+É um modelo conceitual. Runtime, driver, WDDM, firmware e hardware podem validar, traduzir, enfileirar e executar trabalho de maneira sobreposta.
+
+## 9. Pipeline completo com tessellation
+
+```mermaid
+flowchart LR
+    CP[(16 control points)] --> IA[Input Assembler<br/>16-point patch]
+    CB[(CB: MVP, fator,<br/>luz e material)] --> VS[Vertex Shader]
+    IA --> VS
+    VS --> HS[Hull Shader<br/>edge + inside factors]
+    CB --> HS
+    HS --> T[Tessellator<br/>fixed-function<br/>gera u,v]
+    T --> DS[Domain Shader<br/>Bézier + derivadas + normal]
+    CP --> DS
+    CB --> DS
+    DS --> R[Rasterizer]
+    R --> PS[Pixel Shader<br/>Blinn-Phong]
+    CB --> PS
+    PS --> OM[Output Merger<br/>depth]
+    OM --> BB[(Back Buffer)]
+    BB --> P[Present]
+```
+
+O tessellator não calcula Bézier: ele produz domínios paramétricos. A avaliação matemática da superfície acontece no Domain Shader.
+
+## 10. Iluminação programável
+
+```mermaid
+flowchart LR
+    WP[World Position] --> PS[Pixel Shader]
+    N[Normal<br/>cubo: por face<br/>superfície: derivadas] --> PS
+    LD[Light Direction<br/>+ intensidade] --> PS
+    CP[Camera Position] --> PS
+    MAT[Ambient, specular<br/>shininess e flags] --> PS
+    PS --> A[Ambient]
+    PS --> D[Diffuse<br/>dot N,L]
+    PS --> S[Specular<br/>half vector]
+    A --> SUM[Soma e saturate]
+    D --> SUM
+    S --> SUM
+    SUM --> FC[Final Color]
+```
+
+Com iluminação desligada, o shader retorna a cor base. Com specular desligado, apenas ambient e diffuse participam.

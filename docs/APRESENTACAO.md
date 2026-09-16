@@ -2,7 +2,7 @@
 
 ## Antes de começar
 
-Deixe a aplicação aberta no modo 1, telemetria visível e rotação automática ligada. Tenha `Mesh.cpp`, `Application::Update` e `Renderer::Render` marcados no editor. A mensagem central é: **a CPU descreve trabalho e coordena; a GPU executa o pipeline e produz uma imagem; o sistema de apresentação leva essa imagem ao monitor**.
+Deixe a aplicação aberta com o cubo, painel visível e rotação automática ligada. Tenha `Mesh.cpp`, `BezierSurface.cpp`, `Application::Update` e `Renderer::Render` marcados. A mensagem central é: **a CPU descreve trabalho e coordena; a GPU executa o pipeline e produz uma imagem; o sistema de apresentação leva essa imagem ao monitor**. Tessellation e iluminação são demonstrações curtas desse caminho, não um novo tema.
 
 ## 0:00–1:00 — A pergunta
 
@@ -28,7 +28,7 @@ Mostre na barra de título o nome real do adapter.
 Abra `Mesh.cpp`:
 
 - o cubo não chega à GPU como “cubo”;
-- são 24 vértices com posição/cor e 36 índices;
+- são 24 vértices com posição/cor/normal e 36 índices;
 - 8 cantos conceituais viram 24 vértices para atributos independentes por face;
 - os índices formam 12 triângulos.
 
@@ -52,7 +52,7 @@ Mostre a sequência em `Renderer::Render`:
 1. barrier `PRESENT → RENDER_TARGET`;
 2. clear de cor e profundidade;
 3. PSO, Root Signature, viewport e buffers;
-4. `DrawIndexedInstanced(36, ...)`;
+4. `DrawIndexedInstanced(36, ...)` no cubo ou `DrawInstanced(16, ...)` no patch;
 5. barrier `RENDER_TARGET → PRESENT`;
 6. `Close` e `ExecuteCommandLists`.
 
@@ -65,7 +65,15 @@ Explique o pipeline:
 - Pixel Shader produz cor;
 - Output Merger usa depth e grava o render target.
 
-Pressione `2` para revelar a malha triangular; pressione `3` para mostrar interpolação de atributos; volte com `1`.
+Em cerca de 40 segundos, selecione **Superfície Bézier** e wireframe:
+
+- a CPU enviou somente 16 control points;
+- Hull Shader fornece o fator;
+- tessellator fixed-function cria domínios;
+- Domain Shader avalia Bézier e normal;
+- mostre fator 1 e depois 8 ou 16: a GPU gera a densidade visível.
+
+Volte ao sólido. Desligue/ligue iluminação e specular: o Pixel Shader combina ambient, diffuse e specular. Isso é realismo básico, não fotorrealismo.
 
 ## 6:00–7:30 — Swap chain, Present e sincronização
 
@@ -82,14 +90,15 @@ Sobre a fence:
 - antes de reutilizar allocator/constant buffer, a CPU verifica a conclusão;
 - sem isso, CPU poderia sobrescrever memória ainda lida pela GPU.
 
-## 7:30–9:00 — Demonstração “mouse até pixels”
+## 7:30–9:00 — Demonstração “controles até pixels”
 
 1. Segure e arraste horizontalmente: mensagem `WM_MOUSEMOVE` → yaw → View → MVP → constant buffer → Vertex Shader → novo frame.
 2. Arraste verticalmente: pitch limitado evita inversões extremas.
 3. Use a roda: distância limitada entre 3 e 12.
 4. Pressione `R`: câmera volta à posição inicial.
 5. Pressione Espaço: auto-rotação pausa; CPU e GPU continuam produzindo frames, mas com a câmera parada.
-6. Redimensione: espera GPU, `ResizeBuffers`, recria RTV/DSV e corrige aspect ratio.
+6. Use o painel para Cubo/Superfície, wireframe e luz. O ImGui altera dados/PSO; não substitui o pipeline.
+7. Redimensione: espera GPU, `ResizeBuffers`, recria RTV/DSV e corrige aspect ratio.
 
 Ressalte que o FPS é CPU/frames apresentados, e que não existe métrica falsa de tempo de GPU.
 
@@ -97,7 +106,7 @@ Ressalte que o FPS é CPU/frames apresentados, e que não existe métrica falsa 
 
 Recite o fluxo:
 
-> “Aplicação na CPU processa input, calcula matrizes e grava uma Command List. A Queue submete. Driver/runtime conectam a API ao hardware. A GPU transforma vértices, rasteriza triângulos, executa Pixel Shader e escreve um back buffer. A swap chain apresenta pelo Windows; display engine e link de vídeo levam o frame ao monitor. Fences impedem que CPU e GPU colidam ao reutilizar recursos.”
+> “Aplicação na CPU processa input, calcula matrizes e grava uma Command List. A Queue submete. Driver/runtime conectam a API ao hardware. A GPU transforma vértices ou tessella o patch, rasteriza triângulos, calcula iluminação no Pixel Shader e escreve um back buffer. A swap chain apresenta pelo Windows; display engine e link de vídeo levam o frame ao monitor. Fences impedem que CPU e GPU colidam ao reutilizar recursos.”
 
 Feche com três ideias:
 
@@ -108,6 +117,10 @@ Feche com três ideias:
 ## Perguntas prováveis
 
 **Por que 24 vértices se um cubo tem 8 cantos?** Para cada face poder ter atributos próprios; um mesmo canto geométrico precisa de cópias quando cor/normal divergem.
+
+**Tessellation 32 significa 32 triângulos?** Não. É um fator usado nas bordas/interior do domínio quad; a quantidade gerada depende das regras do tessellator. O wireframe é a demonstração mais segura.
+
+**Blinn-Phong é fotorrealista?** Não. É um modelo local didático de ambient+diffuse+specular; não inclui sombras, PBR, reflexos globais ou ray tracing.
 
 **Fence é VSync?** Não. Fence sincroniza progresso de trabalho CPU/GPU. VSync relaciona apresentação ao ciclo vertical do display.
 

@@ -18,14 +18,16 @@ DXGI (DirectX Graphics Infrastructure) enumera adapters e cuida da apresentaçã
 - escolha de GPU física compatível, com fallback WARP documentado;
 - Device, Command Queue, três Command Allocators e uma Command List reutilizada;
 - swap chain flip-discard com três back buffers e VSync;
-- descriptor heaps de RTV e DSV, color buffer e depth buffer;
-- vertex/index/constant buffers, Root Signature e dois PSOs;
-- shaders HLSL separados, rasterização e `DrawIndexedInstanced`;
-- câmera orbital suave, resize completo e três modos de visualização;
+- descriptor heaps de RTV/DSV e heap shader-visible exclusivo do ImGui;
+- vertex/index/constant buffers, Root Signature e PSOs separados;
+- cubo com normais planas e iluminação ambient + diffuse + specular;
+- superfície Bézier bicúbica com 16 control points e tessellation real da GPU;
+- VS, HS, tessellator fixed-function, DS, rasterização e PS;
+- painel Dear ImGui interativo, câmera orbital suave e resize completo;
 - Fence por frame context, permitindo até três frames em voo;
 - D3D12 Debug Layer em Debug e telemetria baseada em valores reais.
 
-Uma janela ImGui não foi incluída: para esta demonstração pequena ela adicionaria muitos fontes/dependências e esconderia parte do fluxo. A telemetria aparece no título e pode ser ocultada com F1. FPS é medido na CPU; índice do buffer e fence vêm dos objetos reais. Nenhum “tempo de GPU” é inventado.
+O painel usa os backends oficiais Win32 e DirectX 12 do Dear ImGui, fixado na versão `v1.90.9` pelo CMake. Ele é desenhado na mesma Command List, depois da cena, e permite comparar objetos, wireframe, iluminação, specular e tessellation em tempo real. FPS é medido na CPU; adapter, índice do buffer e fence vêm dos objetos reais. Nenhum “tempo de GPU” é inventado.
 
 ## Arquitetura geral
 
@@ -56,9 +58,10 @@ O diagrama é conceitual: dependendo de composição, modo de apresentação, ot
 6. São criados Command Queue, descriptor heaps e a swap chain de três buffers.
 7. Cada frame recebe Command Allocator, Constant Buffer mapeada e Fence Value próprio.
 8. Back buffers ganham RTVs; o depth buffer ganha DSV.
-9. HLSL é compilado, Root Signature e PSOs são criados.
-10. Os 24 vértices e 36 índices do cubo são copiados para buffers acessíveis pela GPU.
-11. O loop chama `Update()` e `Render()` até a janela fechar.
+9. HLSL é compilado; Root Signature e PSOs de triângulos e patches são criados.
+10. Os 24 vértices/36 índices do cubo e os 16 control points Bézier vão para buffers.
+11. O ImGui recebe um descriptor heap shader-visible e inicializa backends Win32/DX12.
+12. O loop chama `Update()` e `Render()` até a janela fechar.
 
 ## Componentes principais
 
@@ -76,17 +79,17 @@ O projeto mantém uma lista e três allocators, um por frame context. Isso facil
 
 ### Buffers
 
-O **Vertex Buffer** contém posição e cor de cada vértice. O **Index Buffer** reúne vértices em triângulos sem repetir os dados dentro de uma face. A **Constant Buffer** de cada frame carrega a matriz MVP, modo de cor e tempo. Ela ocupa um bloco alinhado a 256 bytes porque essa é a granularidade exigida para CBVs em D3D12.
+O **Vertex Buffer** do cubo contém posição, cor e normal. O **Index Buffer** reúne vértices em triângulos. Outro vertex buffer contém somente os 16 control points do patch Bézier. A **Constant Buffer** de cada frame carrega Model/MVP, câmera, luz, material, flags e fator de tessellation. Seu layout C++/HLSL tem `static_assert` de 192 bytes e a alocação é arredondada para 256 bytes, granularidade exigida para CBVs em D3D12.
 
 Para clareza, vertex e index buffers usam upload heaps. Em uma engine, malhas estáticas normalmente seriam copiadas para default heaps por uma copy command list para obter acesso ideal da GPU. Essa otimização não muda o conceito demonstrado.
 
 ### Root Signature e Pipeline State Object
 
-A **Root Signature** é o contrato dos recursos visíveis ao shader; aqui expõe a constant buffer `b0` ao Vertex Shader. O **PSO** agrupa shaders e estados fixos (input layout, rasterizer, depth, blend e formatos). Há PSOs sólido e wireframe.
+A **Root Signature** é o contrato dos recursos visíveis ao shader; aqui expõe a constant buffer `b0` a todos os estágios necessários. O **PSO** agrupa shaders e estados fixos. O cubo tem PSOs de triângulos sólido/wireframe; a superfície tem PSOs de patch sólido/wireframe, com VS+HS+DS+PS e `D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH`.
 
 ### Shaders e rasterização
 
-O Vertex Shader recebe posição/cor e calcula a posição projetada. O Input Assembler lê índices e forma 12 triângulos. Clipping e rasterização determinam quais amostras de pixels esses triângulos cobrem e interpolam cores. O Pixel Shader devolve uma cor; o Output Merger aplica depth test e escreve no render target.
+No cubo, o Vertex Shader recebe posição/cor/normal e produz posição projetada, posição de mundo e normal. O Input Assembler lê índices e forma 12 triângulos. Na superfície, VS e Hull Shader preservam os 16 control points, o tessellator gera domínios paramétricos e o Domain Shader avalia posição e normal. Depois, rasterização interpola atributos e o Pixel Shader calcula aparência; o Output Merger aplica depth test e escreve no render target.
 
 ## Model, View e Projection
 
@@ -101,17 +104,52 @@ No C++: `MVP = Model * View * Projection`, seguindo vetores-linha do DirectXMath
 Uma GPU não recebe a ideia de “cubo”. `Mesh.cpp` contém literalmente `std::array<Vertex, 24>` e `std::array<uint16_t, 36>`:
 
 - 8 cantos são suficientes geometricamente;
-- o projeto duplica os cantos em 24 vértices, 4 por face, para dar cor independente a cada face;
+- o projeto duplica os cantos em 24 vértices, 4 por face, para dar cor e normal plana independentes;
 - 6 índices por face formam 2 triângulos;
 - 6 faces × 2 = 12 triângulos = 36 índices.
+
+## Curvas e superfícies
+
+Uma superfície matemática não precisa chegar à GPU como milhões de vértices. `BezierSurface.cpp` declara uma grade 4×4, totalizando **16 control points**. Ela define um patch Bézier bicúbico:
+
+```text
+16 control points → Vertex Shader → Hull Shader → tessellator
+→ Domain Shader avalia Bézier(u,v) → triângulos → rasterização
+```
+
+O Hull Shader envia quatro edge factors e dois inside factors configuráveis entre 1 e 32. O tessellator fixed-function cria coordenadas `(u,v)`; ele não conhece a fórmula Bézier. O Domain Shader aplica as bases de Bernstein aos 16 pontos e calcula `dP/du` e `dP/dv`. A normal vem de `normalize(cross(dP/dv, dP/du))`.
+
+Com fator 1 aparecem os poucos triângulos mínimos. Fatores 8, 16 e 32 aproximam a curvatura com uma grade progressivamente densa. Isso demonstra nível de detalhe e economia potencial de armazenamento/banda: a CPU fornece 16 pontos e um fator, não uma malha pré-subdividida. Tessellation maior também custa mais processamento; não é qualidade gratuita.
+
+## Iluminação e realismo básico
+
+O Pixel Shader usa um Blinn-Phong didático:
+
+```text
+I = ambient + diffuse + specular
+```
+
+- **Ambient:** contribuição mínima, independente da orientação.
+- **Diffuse:** `max(dot(normal, direção para luz), 0)`; superfícies voltadas à luz recebem mais energia.
+- **Specular:** usa câmera e half vector; `shininess` controla a concentração do brilho.
+
+O cubo usa uma normal constante por face. A superfície calcula normais suaves no Domain Shader a partir das derivadas matemáticas. Desligar iluminação retorna a cor base; desligar specular mantém ambient+diffuse.
+
+Aqui “realismo” significa apenas o primeiro passo de aparência tridimensional: normais e iluminação ambient/diffuse/specular. Não é fotorrealismo. Sistemas avançados podem envolver materiais físicos, texturas, sombras, reflections, normal mapping, PBR, ambient occlusion e ray tracing — propositalmente fora do escopo.
+
+## Interface didática
+
+O painel “DirectX 12 - Painel da Demonstração” inicia visível e controla a cena em tempo real. Os backends oficiais recebem mensagens Win32 e gravam draw calls DX12 na Command List existente. `WantCaptureMouse` e `WantCaptureKeyboard` separam painel e câmera; um drag iniciado na cena mantém sua propriedade até o botão subir. O resize não recria o heap do ImGui nem quebra frames/fences.
+
+A dependência é obtida por `FetchContent` durante a primeira configuração CMake. Não há download durante a execução e nenhum binário externo é versionado.
 
 ## CPU vs GPU
 
 | CPU | GPU |
 |---|---|
 | processa mensagens Win32 e input | executa muitas invocações de shader em paralelo |
-| atualiza yaw, pitch, zoom e matrizes | transforma vértices |
-| administra recursos e estados | monta/rasteriza triângulos |
+| atualiza yaw, pitch, zoom e matrizes | transforma vértices e avalia parâmetros |
+| administra recursos e estados | tessella patches e monta/rasteriza triângulos |
 | grava e submete comandos | interpola atributos e calcula cores |
 | coordena frames com fences | testa profundidade e escreve no back buffer |
 
@@ -149,7 +187,7 @@ mouse físico → driver de input → mensagem WM_MOUSEMOVE/WM_MOUSEWHEEL
 2. Calcula `Model * View * Projection`.
 3. Espera a fence apenas se o contexto N ainda estiver em uso.
 4. Copia constantes e reseta allocator/list.
-5. Grava barrier, clears, binds, viewport, buffers e `DrawIndexedInstanced`.
+5. Grava barrier, clears, binds e buffers; usa `DrawIndexedInstanced` no cubo ou `DrawInstanced` no patch.
 6. Grava a barrier de volta, fecha e submete a lista.
 7. Chama `Present(1,0)` e sinaliza um novo Fence Value.
 
@@ -157,8 +195,8 @@ mouse físico → driver de input → mensagem WM_MOUSEMOVE/WM_MOUSEWHEEL
 
 1. Obtém comandos na fila quando o escalonador/driver os disponibiliza.
 2. Lê vértices, índices e constantes.
-3. Executa Vertex Shader, montagem, clipping e rasterização.
-4. Executa Pixel Shader, depth test e escreve o back buffer.
+3. Executa VS; na superfície também HS, tessellator e DS; então montagem, clipping e rasterização.
+4. Executa Pixel Shader com iluminação, depth test e escreve o back buffer.
 5. Conclui os comandos e avança a fence sinalizada na fila.
 
 **Apresentação/monitor**
@@ -180,7 +218,8 @@ No `WM_SIZE`, a aplicação espera a GPU, solta referências aos back buffers an
 - Windows 10 ou 11 x64;
 - Visual Studio 2022 ou Build Tools 2022 com “Desktop development with C++”;
 - Windows 10/11 SDK com Direct3D 12;
-- CMake 3.24+.
+- CMake 3.24+;
+- Git e internet na primeira configuração para obter Dear ImGui `v1.90.9`.
 
 No **Developer PowerShell for VS 2022**, na raiz do repositório:
 
@@ -215,11 +254,15 @@ Para abrir e depurar na IDE, abra a pasta do projeto ou o `.sln` gerado. A build
 | roda do mouse | zoom entre 3 e 12 unidades |
 | R | resetar câmera |
 | Espaço | ligar/desligar rotação automática |
-| F1 | mostrar/ocultar telemetria no título |
-| 1 | faces coloridas |
-| 2 | wireframe |
-| 3 | cor derivada da posição/interpolação |
+| F1 | mostrar/ocultar painel ImGui |
+| 1 | selecionar cubo |
+| 2 | selecionar superfície Bézier |
+| W | ligar/desligar wireframe |
+| L | ligar/desligar iluminação |
+| C | ligar/desligar cor derivada da posição |
 | Esc | sair |
+
+O painel também controla specular, tessellation 1–32, intensidade/direção da luz, ambiente, intensidade especular e shininess.
 
 ## Estrutura
 
@@ -230,13 +273,20 @@ directx12-interactive-cube/
 │   ├── main.cpp
 │   ├── Application.{h,cpp}   janela, mensagens, Update/Render
 │   ├── Camera.{h,cpp}        câmera orbital e suavização
-│   ├── Mesh.{h,cpp}          vértices e índices explícitos
+│   ├── Mesh.{h,cpp}          cubo: posição, cor, normal e índices
+│   ├── BezierSurface.{h,cpp} 16 control points explícitos
+│   ├── UserInterface.{h,cpp} Dear ImGui Win32 + DX12
+│   ├── SceneState.h          objeto e opções independentes
 │   ├── Renderer.{h,cpp}      Direct3D 12 e sincronização
 │   └── DxHelpers.h           HRESULT, alinhamento e barriers
-├── shaders/CubeVS.hlsl, CubePS.hlsl
+├── shaders/
+│   ├── CubeVS.hlsl / CubePS.hlsl
+│   ├── SurfaceVS/HS/DS/PS.hlsl
+│   └── SceneConstants.hlsli / Lighting.hlsli
 └── docs/
     ├── APRESENTACAO.md
     ├── COMO_UMA_IMAGEM_CHEGA_AO_MONITOR.md
+    ├── DIRECTX_EM_PROFUNDIDADE.md
     └── DIAGRAMAS.md
 ```
 

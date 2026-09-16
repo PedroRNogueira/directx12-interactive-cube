@@ -100,9 +100,17 @@ O estágio fixo reúne saídas em triângulos, elimina/corta regiões fora do vo
 
 ### 7.4 Pixel Shader e Output Merger
 
-O Pixel Shader devolve `float4(color, 1)`. O depth test compara a profundidade com o depth buffer para que faces atrás não cubram faces à frente. O Output Merger grava a cor no render target, formato `R8G8B8A8_UNORM`.
+O Pixel Shader parte da cor base. Com iluminação ligada, combina ambient, diffuse (`dot(normal, luz)`) e specular Blinn-Phong (normal, câmera e half vector). O depth test compara a profundidade com o depth buffer para que faces atrás não cubram faces à frente. O Output Merger grava a cor no render target, formato `R8G8B8A8_UNORM`.
 
 O shader não escreve no monitor. Ele produz valores para um recurso de imagem em memória controlada pelo subsistema gráfico.
+
+### 7.5 Quando o objeto é a superfície Bézier
+
+A CPU não constrói uma malha densa. Ela envia 16 control points como um único patch e grava `DrawInstanced(16, ...)` com `D3D_PRIMITIVE_TOPOLOGY_16_CONTROL_POINT_PATCHLIST`.
+
+O Vertex Shader encaminha os pontos. O Hull Shader produz edge/inside tessellation factors. O tessellator fixed-function cria coordenadas paramétricas `(u,v)`. Para cada domínio gerado, o Domain Shader avalia a função Bézier bicúbica, suas derivadas `dP/du`/`dP/dv` e uma normal. Só então surgem os triângulos que seguem para rasterização e Pixel Shader.
+
+Mover o slider no ImGui altera `tessellationFactor` na constant buffer do próximo frame. Não há regeneração de uma malha pela CPU. O mesmo caminho de Command List, Queue, fence, back buffer e Present continua valendo.
 
 ## 8. Render target, framebuffer e back buffer
 
