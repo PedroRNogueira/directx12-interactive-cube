@@ -298,3 +298,4 @@ directx12-interactive-cube/
 - [Apresentação flip model — Microsoft Learn](https://learn.microsoft.com/windows/win32/direct3ddxgi/dxgi-1-2-presentation-improvements)
 - [`IDXGISwapChain::Present` — Microsoft Learn](https://learn.microsoft.com/windows/win32/api/dxgi/nf-dxgi-idxgiswapchain-present)
 - [DirectX Graphics Samples — Microsoft](https://github.com/microsoft/DirectX-Graphics-Samples)
+- [Dear ImGui e backends oficiais](https://github.com/ocornut/imgui/tree/v1.90.9/backends)

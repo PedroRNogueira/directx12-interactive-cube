@@ -272,7 +272,14 @@ ComPtr<ID3DBlob> Renderer::CompileShader(const wchar_t* file, const char* target
     ComPtr<ID3DBlob> errors;
     HRESULT result = D3DCompileFromFile(path.c_str(), nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE,
                                         "main", target, flags, 0, &shader, &errors);
-    if (FAILED(result) && errors) OutputDebugStringA(static_cast<char*>(errors->GetBufferPointer()));
+    if (FAILED(result) && errors)
+    {
+        const std::string compilerMessage(static_cast<char*>(errors->GetBufferPointer()),
+                                          errors->GetBufferSize());
+        OutputDebugStringA(compilerMessage.c_str());
+        throw std::runtime_error("Falha ao compilar " + path.string() + " (" + target + "):\n" +
+                                 compilerMessage);
+    }
     ThrowIfFailed(result, "D3DCompileFromFile");
     return shader;
 }

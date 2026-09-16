@@ -152,5 +152,11 @@ bool UserInterface::HandleMessage(HWND window, UINT message, WPARAM wParam, LPAR
     return initialized_ && ImGui_ImplWin32_WndProcHandler(window, message, wParam, lParam) != 0;
 }
 
-bool UserInterface::WantsMouse() const { return initialized_ && ImGui::GetIO().WantCaptureMouse; }
+bool UserInterface::WantsMouse() const
+{
+    if (!initialized_) return false;
+    // Hover/active ownership complements WantCaptureMouse between two NewFrame calls.
+    return ImGui::GetIO().WantCaptureMouse ||
+           ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) || ImGui::IsAnyItemActive();
+}
 bool UserInterface::WantsKeyboard() const { return initialized_ && ImGui::GetIO().WantCaptureKeyboard; }
