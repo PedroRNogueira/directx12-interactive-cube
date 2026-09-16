@@ -346,9 +346,10 @@ void Renderer::CreateGeometry()
 
 void Renderer::UpdateScene(const DirectX::XMMATRIX& mvp, float colorMode, float elapsedSeconds)
 {
-    // HLSL usa mul(matriz, vetor); a transposição concilia a convenção row-major do DirectXMath.
+    // DirectXMath produz a matriz para vetores-linha. Em memória HLSL column-major,
+    // os mesmos bytes representam a transposta, adequada a mul(matriz, vetor-coluna).
     DirectX::XMStoreFloat4x4(&pendingConstants_.modelViewProjection,
-                            DirectX::XMMatrixTranspose(mvp));
+                            mvp);
     pendingConstants_.colorMode = colorMode;
     pendingConstants_.timeSeconds = elapsedSeconds;
 }
@@ -452,4 +453,14 @@ void Renderer::UpdateViewport(UINT width, UINT height)
 UINT Renderer::FrameIndex() const
 {
     return swapChain_ ? swapChain_->GetCurrentBackBufferIndex() : 0;
+}
+
+UINT64 Renderer::DebugMessageCount() const
+{
+#if defined(_DEBUG)
+    ComPtr<ID3D12InfoQueue> infoQueue;
+    if (device_ && SUCCEEDED(device_.As(&infoQueue)))
+        return infoQueue->GetNumStoredMessagesAllowedByRetrievalFilter();
+#endif
+    return 0;
 }

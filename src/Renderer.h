@@ -31,6 +31,7 @@ public:
     [[nodiscard]] UINT64 LastFenceValue() const { return lastSubmittedFence_; }
     [[nodiscard]] const std::wstring& AdapterName() const { return adapterName_; }
     [[nodiscard]] bool UsingWarp() const { return usingWarp_; }
+    [[nodiscard]] UINT64 DebugMessageCount() const;
 
 private:
     struct FrameContext

@@ -119,10 +119,15 @@ void Application::UpdateWindowTitle(float deltaSeconds)
     title << BaseTitle << L" | FPS " << std::fixed << std::setprecision(1) << displayedFps_
           << L" | buffer " << renderer_->FrameIndex() << L"/" << Renderer::FrameCount
           << L" | fence " << renderer_->LastFenceValue()
+          << L" | modo " << renderMode_
+          << L" | auto " << (camera_.AutoRotate() ? L"on" : L"off")
           << L" | yaw " << camera_.YawDegrees() << L"° pitch " << camera_.PitchDegrees()
           << L"° zoom " << camera_.Distance()
           << L" | GPU: " << renderer_->AdapterName()
           << (renderer_->UsingWarp() ? L" (WARP/software)" : L"");
+#if defined(_DEBUG)
+    title << L" | D3D12 debug " << renderer_->DebugMessageCount();
+#endif
     SetWindowTextW(window_, title.str().c_str());
 }
 
