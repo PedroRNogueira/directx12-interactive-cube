@@ -10,6 +10,8 @@
 #include <cstdint>
 #include <string>
 
+#include "SceneState.h"
+
 class UserInterface;
 
 class Renderer
@@ -23,9 +25,12 @@ public:
     Renderer& operator=(const Renderer&) = delete;
 
     void Initialize(HWND window, UINT width, UINT height);
-    void UpdateScene(const DirectX::XMMATRIX& modelViewProjection,
-                     float colorMode, float elapsedSeconds);
-    void Render(bool wireframe, UserInterface* userInterface);
+    void UpdateScene(const DirectX::XMMATRIX& model,
+                     const DirectX::XMMATRIX& view,
+                     const DirectX::XMMATRIX& projection,
+                     const DirectX::XMFLOAT3& cameraPosition,
+                     const RenderOptions& options);
+    void Render(const RenderOptions& options, UserInterface* userInterface);
     void Resize(UINT width, UINT height);
     void WaitForGpu();
 
@@ -48,10 +53,21 @@ private:
     struct SceneConstants
     {
         DirectX::XMFLOAT4X4 modelViewProjection;
-        float colorMode = 0.0f;
-        float timeSeconds = 0.0f;
+        DirectX::XMFLOAT4X4 model;
+        DirectX::XMFLOAT3 cameraPosition;
+        float lightingEnabled = 1.0f;
+        DirectX::XMFLOAT3 lightDirection;
+        float lightIntensity = 1.0f;
+        float ambientIntensity = 0.18f;
+        float specularIntensity = 0.65f;
+        float shininess = 48.0f;
+        float tessellationFactor = 8.0f;
+        float specularEnabled = 1.0f;
+        float colorVisualization = 0.0f;
         float padding[2]{};
     };
+    static_assert(sizeof(SceneConstants) == 192,
+                  "O layout C++ deve corresponder ao cbuffer HLSL de 192 bytes");
 
     void EnableDebugLayer();
     void CreateDeviceAndQueue();
@@ -89,12 +105,16 @@ private:
     Microsoft::WRL::ComPtr<ID3D12Resource> depthBuffer_;
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> solidPipeline_;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> wireframePipeline_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> cubeSolidPipeline_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> cubeWireframePipeline_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> surfaceSolidPipeline_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> surfaceWireframePipeline_;
     Microsoft::WRL::ComPtr<ID3D12Resource> vertexBuffer_;
     Microsoft::WRL::ComPtr<ID3D12Resource> indexBuffer_;
+    Microsoft::WRL::ComPtr<ID3D12Resource> surfaceControlPointBuffer_;
     D3D12_VERTEX_BUFFER_VIEW vertexView_{};
     D3D12_INDEX_BUFFER_VIEW indexView_{};
+    D3D12_VERTEX_BUFFER_VIEW surfaceControlPointView_{};
 
     Microsoft::WRL::ComPtr<ID3D12Fence> fence_;
     HANDLE fenceEvent_ = nullptr;

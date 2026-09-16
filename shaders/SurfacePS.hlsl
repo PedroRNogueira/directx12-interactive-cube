@@ -12,3 +12,4 @@ float4 main(PixelInput input) : SV_TARGET
 {
     return float4(ApplyLighting(input.color, input.worldPosition, input.worldNormal), 1.0f);
 }
+

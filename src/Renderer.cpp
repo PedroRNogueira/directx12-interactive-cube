@@ -1,5 +1,6 @@
 #include "Renderer.h"
 
+#include "BezierSurface.h"
 #include "DxHelpers.h"
 #include "Mesh.h"
 #include "UserInterface.h"
@@ -236,16 +237,14 @@ void Renderer::CreateRootSignature()
     D3D12_ROOT_PARAMETER parameter{};
     parameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     parameter.Descriptor.ShaderRegister = 0;
-    parameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+    // A mesma cena é lida por VS/HS/DS/PS; ALL mantém o contrato explícito e único.
+    parameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
     D3D12_ROOT_SIGNATURE_DESC description{};
     description.NumParameters = 1;
     description.pParameters = &parameter;
     description.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
-                        D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
-                        D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-                        D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
-                        D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS;
+                        D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
 
     ComPtr<ID3DBlob> serialized;
     ComPtr<ID3DBlob> errors;
@@ -280,20 +279,22 @@ ComPtr<ID3DBlob> Renderer::CompileShader(const wchar_t* file, const char* target
 
 void Renderer::CreatePipelineStates()
 {
-    const auto vertexShader = CompileShader(L"CubeVS.hlsl", "vs_5_1");
-    const auto pixelShader = CompileShader(L"CubePS.hlsl", "ps_5_1");
-    const D3D12_INPUT_ELEMENT_DESC layout[] = {
+    const auto cubeVS = CompileShader(L"CubeVS.hlsl", "vs_5_1");
+    const auto cubePS = CompileShader(L"CubePS.hlsl", "ps_5_1");
+    const D3D12_INPUT_ELEMENT_DESC cubeLayout[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
         {"COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12,
+         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 24,
          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
     };
 
     D3D12_GRAPHICS_PIPELINE_STATE_DESC pso{};
     pso.pRootSignature = rootSignature_.Get();
-    pso.VS = {vertexShader->GetBufferPointer(), vertexShader->GetBufferSize()};
-    pso.PS = {pixelShader->GetBufferPointer(), pixelShader->GetBufferSize()};
-    pso.InputLayout = {layout, static_cast<UINT>(std::size(layout))};
+    pso.VS = {cubeVS->GetBufferPointer(), cubeVS->GetBufferSize()};
+    pso.PS = {cubePS->GetBufferPointer(), cubePS->GetBufferSize()};
+    pso.InputLayout = {cubeLayout, static_cast<UINT>(std::size(cubeLayout))};
     pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     pso.NumRenderTargets = 1;
     pso.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -310,18 +311,46 @@ void Renderer::CreatePipelineStates()
     pso.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
     pso.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
 
-    ThrowIfFailed(device_->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&solidPipeline_)),
-                  "Create solid PSO");
+    ThrowIfFailed(device_->CreateGraphicsPipelineState(&pso,
+                                                        IID_PPV_ARGS(&cubeSolidPipeline_)),
+                  "Create cube solid PSO");
     pso.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
     pso.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
-    ThrowIfFailed(device_->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&wireframePipeline_)),
-                  "Create wireframe PSO");
+    ThrowIfFailed(device_->CreateGraphicsPipelineState(&pso,
+                                                        IID_PPV_ARGS(&cubeWireframePipeline_)),
+                  "Create cube wireframe PSO");
+
+    const auto surfaceVS = CompileShader(L"SurfaceVS.hlsl", "vs_5_1");
+    const auto surfaceHS = CompileShader(L"SurfaceHS.hlsl", "hs_5_1");
+    const auto surfaceDS = CompileShader(L"SurfaceDS.hlsl", "ds_5_1");
+    const auto surfacePS = CompileShader(L"SurfacePS.hlsl", "ps_5_1");
+    const D3D12_INPUT_ELEMENT_DESC surfaceLayout[] = {
+        {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
+         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+    };
+
+    pso.VS = {surfaceVS->GetBufferPointer(), surfaceVS->GetBufferSize()};
+    pso.HS = {surfaceHS->GetBufferPointer(), surfaceHS->GetBufferSize()};
+    pso.DS = {surfaceDS->GetBufferPointer(), surfaceDS->GetBufferSize()};
+    pso.PS = {surfacePS->GetBufferPointer(), surfacePS->GetBufferSize()};
+    pso.InputLayout = {surfaceLayout, static_cast<UINT>(std::size(surfaceLayout))};
+    pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH;
+    pso.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+    pso.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+    ThrowIfFailed(device_->CreateGraphicsPipelineState(&pso,
+                                                        IID_PPV_ARGS(&surfaceSolidPipeline_)),
+                  "Create surface tessellation PSO");
+    pso.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+    ThrowIfFailed(device_->CreateGraphicsPipelineState(&pso,
+                                                        IID_PPV_ARGS(&surfaceWireframePipeline_)),
+                  "Create surface wireframe PSO");
 }
 
 void Renderer::CreateGeometry()
 {
     const UINT vertexBytes = static_cast<UINT>(sizeof(CubeMesh::Vertices));
     const UINT indexBytes = static_cast<UINT>(sizeof(CubeMesh::Indices));
+    const UINT controlPointBytes = static_cast<UINT>(sizeof(BezierSurface::ControlPoints));
     const auto heap = UploadHeap();
     auto description = BufferDescription(vertexBytes);
     ThrowIfFailed(device_->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &description,
@@ -331,6 +360,11 @@ void Renderer::CreateGeometry()
     ThrowIfFailed(device_->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &description,
                     D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&indexBuffer_)),
                   "Create index buffer");
+    description = BufferDescription(controlPointBytes);
+    ThrowIfFailed(device_->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &description,
+                    D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+                    IID_PPV_ARGS(&surfaceControlPointBuffer_)),
+                  "Create Bezier control point buffer");
 
     void* mapped = nullptr;
     D3D12_RANGE noRead{0, 0};
@@ -340,22 +374,40 @@ void Renderer::CreateGeometry()
     ThrowIfFailed(indexBuffer_->Map(0, &noRead, &mapped), "Map index buffer");
     std::memcpy(mapped, CubeMesh::Indices.data(), indexBytes);
     indexBuffer_->Unmap(0, nullptr);
+    ThrowIfFailed(surfaceControlPointBuffer_->Map(0, &noRead, &mapped),
+                  "Map Bezier control point buffer");
+    std::memcpy(mapped, BezierSurface::ControlPoints.data(), controlPointBytes);
+    surfaceControlPointBuffer_->Unmap(0, nullptr);
 
     vertexView_ = {vertexBuffer_->GetGPUVirtualAddress(), vertexBytes, sizeof(Vertex)};
     indexView_ = {indexBuffer_->GetGPUVirtualAddress(), indexBytes, DXGI_FORMAT_R16_UINT};
+    surfaceControlPointView_ = {surfaceControlPointBuffer_->GetGPUVirtualAddress(),
+                                controlPointBytes, sizeof(BezierControlPoint)};
 }
 
-void Renderer::UpdateScene(const DirectX::XMMATRIX& mvp, float colorMode, float elapsedSeconds)
+void Renderer::UpdateScene(const DirectX::XMMATRIX& model,
+                           const DirectX::XMMATRIX& view,
+                           const DirectX::XMMATRIX& projection,
+                           const DirectX::XMFLOAT3& cameraPosition,
+                           const RenderOptions& options)
 {
     // DirectXMath produz a matriz para vetores-linha. Em memória HLSL column-major,
     // os mesmos bytes representam a transposta, adequada a mul(matriz, vetor-coluna).
-    DirectX::XMStoreFloat4x4(&pendingConstants_.modelViewProjection,
-                            mvp);
-    pendingConstants_.colorMode = colorMode;
-    pendingConstants_.timeSeconds = elapsedSeconds;
+    DirectX::XMStoreFloat4x4(&pendingConstants_.modelViewProjection, model * view * projection);
+    DirectX::XMStoreFloat4x4(&pendingConstants_.model, model);
+    pendingConstants_.cameraPosition = cameraPosition;
+    pendingConstants_.lightingEnabled = options.lighting ? 1.0f : 0.0f;
+    pendingConstants_.lightDirection = options.lightDirection;
+    pendingConstants_.lightIntensity = options.lightIntensity;
+    pendingConstants_.ambientIntensity = options.ambientIntensity;
+    pendingConstants_.specularIntensity = options.specularIntensity;
+    pendingConstants_.shininess = options.shininess;
+    pendingConstants_.tessellationFactor = options.tessellationFactor;
+    pendingConstants_.specularEnabled = options.specular ? 1.0f : 0.0f;
+    pendingConstants_.colorVisualization = options.colorVisualization ? 1.0f : 0.0f;
 }
 
-void Renderer::Render(bool wireframe, UserInterface* userInterface)
+void Renderer::Render(const RenderOptions& options, UserInterface* userInterface)
 {
     const UINT index = swapChain_->GetCurrentBackBufferIndex();
     auto& frame = frames_[index];
@@ -363,8 +415,13 @@ void Renderer::Render(bool wireframe, UserInterface* userInterface)
     std::memcpy(frame.mappedConstants, &pendingConstants_, sizeof(pendingConstants_));
 
     ThrowIfFailed(frame.allocator->Reset(), "CommandAllocator Reset");
-    ThrowIfFailed(commandList_->Reset(frame.allocator.Get(),
-                    wireframe ? wireframePipeline_.Get() : solidPipeline_.Get()),
+    ID3D12PipelineState* pipeline = nullptr;
+    if (options.object == SceneObject::Cube)
+        pipeline = options.wireframe ? cubeWireframePipeline_.Get() : cubeSolidPipeline_.Get();
+    else
+        pipeline = options.wireframe ? surfaceWireframePipeline_.Get()
+                                     : surfaceSolidPipeline_.Get();
+    ThrowIfFailed(commandList_->Reset(frame.allocator.Get(), pipeline),
                   "CommandList Reset");
 
     // O back buffer precisa estar no estado correto para receber escrita da GPU.
@@ -385,10 +442,24 @@ void Renderer::Render(bool wireframe, UserInterface* userInterface)
     commandList_->SetGraphicsRootSignature(rootSignature_.Get());
     commandList_->SetGraphicsRootConstantBufferView(0,
                                                      frame.constantBuffer->GetGPUVirtualAddress());
-    commandList_->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    commandList_->IASetVertexBuffers(0, 1, &vertexView_);
-    commandList_->IASetIndexBuffer(&indexView_);
-    commandList_->DrawIndexedInstanced(static_cast<UINT>(CubeMesh::Indices.size()), 1, 0, 0, 0);
+    if (options.object == SceneObject::Cube)
+    {
+        commandList_->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        commandList_->IASetVertexBuffers(0, 1, &vertexView_);
+        commandList_->IASetIndexBuffer(&indexView_);
+        commandList_->DrawIndexedInstanced(static_cast<UINT>(CubeMesh::Indices.size()),
+                                            1, 0, 0, 0);
+    }
+    else
+    {
+        // Estes 16 pontos formam um patch; HS+tessellator+DS geram os triângulos na GPU.
+        commandList_->IASetPrimitiveTopology(
+            D3D_PRIMITIVE_TOPOLOGY_16_CONTROL_POINT_PATCHLIST);
+        commandList_->IASetVertexBuffers(0, 1, &surfaceControlPointView_);
+        commandList_->IASetIndexBuffer(nullptr);
+        commandList_->DrawInstanced(static_cast<UINT>(BezierSurface::ControlPoints.size()),
+                                    1, 0, 0);
+    }
 
     // O backend oficial DX12 grava a interface na mesma lista do frame.
     if (userInterface) userInterface->Render(commandList_.Get());

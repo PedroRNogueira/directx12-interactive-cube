@@ -92,8 +92,7 @@ void Application::Update(float deltaSeconds)
     const XMMATRIX projection = XMMatrixPerspectiveFovLH(XMConvertToRadians(45.0f), aspect, 0.1f, 100.0f);
 
     // A ordem row-vector do DirectXMath é Model * View * Projection.
-    const XMMATRIX mvp = model * view * projection;
-    renderer_->UpdateScene(mvp, renderOptions_.colorVisualization ? 1.0f : 0.0f, elapsedSeconds_);
+    renderer_->UpdateScene(model, view, projection, camera_.Position(), renderOptions_);
     UpdateWindowTitle(deltaSeconds);
 
     InterfaceStats stats;
@@ -118,7 +117,7 @@ void Application::Update(float deltaSeconds)
 
 void Application::Render()
 {
-    renderer_->Render(renderOptions_.wireframe, userInterface_.get());
+    renderer_->Render(renderOptions_, userInterface_.get());
 }
 
 void Application::UpdateWindowTitle(float deltaSeconds)

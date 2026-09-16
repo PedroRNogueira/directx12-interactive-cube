@@ -30,6 +30,8 @@ add_executable(DirectX12InteractiveCube WIN32
     src/main.cpp
     src/Application.cpp
     src/Application.h
+    src/BezierSurface.cpp
+    src/BezierSurface.h
     src/Camera.cpp
     src/Camera.h
     src/DxHelpers.h
